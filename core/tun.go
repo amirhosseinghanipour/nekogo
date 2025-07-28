@@ -77,10 +77,82 @@ func (s *Socks5Forwarder) ForwardTCP(pkt []byte) error {
 }
 
 func (s *Socks5Forwarder) ForwardUDP(pkt []byte) error {
-	// SOCKS5 UDP forwarding is complex and not supported by default libraries.
-	// This requires implementing the UDP ASSOCIATE command.
-	// For now, we log that it's unsupported.
-	log.Println("SOCKS5 UDP forwarding is not yet implemented.")
+	if len(pkt) < 20 {
+		return fmt.Errorf("packet too short")
+	}
+	ihl := int(pkt[0]&0x0F) * 4
+	if len(pkt) < ihl+8 {
+		return fmt.Errorf("not enough data for UDP header")
+	}
+	dstIP := net.IP(pkt[16:20])
+	dstPort := binary.BigEndian.Uint16(pkt[ihl+2 : ihl+4])
+	log.Printf("TUN UDP -> %s:%d (SOCKS5)", dstIP, dstPort)
+
+	proxyAddr := fmt.Sprintf("%s:%d", s.Server.Address, s.Server.Port)
+	dialer, err := proxy.SOCKS5("tcp", proxyAddr, nil, proxy.Direct)
+	if err != nil {
+		return fmt.Errorf("failed to create SOCKS5 dialer for UDP associate: %w", err)
+	}
+	conn, err := dialer.Dial("tcp", proxyAddr) // Connect to the SOCKS server
+	if err != nil {
+		return fmt.Errorf("failed to dial SOCKS5 server for UDP associate: %w", err)
+	}
+	defer conn.Close()
+
+	// 1. Send UDP ASSOCIATE command
+	// +----+-----+-------+------+----------+----------+
+	// |VER | CMD | RSV   | ATYP | DST.ADDR | DST.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  | 1   | X'00' | 1    | Variable | 2        |
+	// +----+-----+-------+------+----------+----------+
+	// For UDP ASSOCIATE, DST.ADDR and DST.PORT are the address and port that the client
+	// wants to use to send UDP datagrams. We can set them to 0.
+	b := []byte{0x05, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	if _, err := conn.Write(b); err != nil {
+		return fmt.Errorf("failed to write UDP associate request: %w", err)
+	}
+
+	// 2. Read the server's reply
+	// +----+-----+-------+------+----------+----------+
+	// |VER | REP | RSV   | ATYP | BND.ADDR | BND.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  | 1   | X'00' | 1    | Variable | 2        |
+	// +----+-----+-------+------+----------+----------+
+	resp := make([]byte, 256)
+	n, err := conn.Read(resp)
+	if err != nil {
+		return fmt.Errorf("failed to read UDP associate reply: %w", err)
+	}
+	if n < 10 || resp[0] != 0x05 || resp[1] != 0x00 {
+		return fmt.Errorf("UDP associate failed, server response: %v", resp[:n])
+	}
+	bndPort := binary.BigEndian.Uint16(resp[n-2:])
+	bndAddr := net.IP(resp[4 : n-2])
+
+	// 3. Send the UDP datagram to the address we got from the server
+	udpConn, err := net.DialUDP("udp", nil, &net.UDPAddr{IP: bndAddr, Port: int(bndPort)})
+	if err != nil {
+		return fmt.Errorf("failed to dial UDP relay: %w", err)
+	}
+	defer udpConn.Close()
+
+	// 4. Construct the SOCKS5 UDP request packet
+	// +----+------+------+----------+----------+----------+
+	// |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
+	// +----+------+------+----------+----------+----------+
+	// | 2  |  1   |  1   | Variable |    2     | Variable |
+	// +----+------+------+----------+----------+----------+
+	udpReq := []byte{0x00, 0x00, 0x00, 0x01} // RSV, FRAG, ATYP (IPv4)
+	udpReq = append(udpReq, dstIP.To4()...)
+	portBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(portBytes, dstPort)
+	udpReq = append(udpReq, portBytes...)
+	udpReq = append(udpReq, pkt[ihl+8:]...) // Append the original UDP payload
+
+	if _, err := udpConn.Write(udpReq); err != nil {
+		return fmt.Errorf("failed to write UDP packet to relay: %w", err)
+	}
+	AddBytesSent(int64(len(udpReq)))
 	return nil
 }
 
