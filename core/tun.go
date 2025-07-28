@@ -100,24 +100,12 @@ func (s *Socks5Forwarder) ForwardUDP(pkt []byte) error {
 	defer conn.Close()
 
 	// 1. Send UDP ASSOCIATE command
-	// +----+-----+-------+------+----------+----------+
-	// |VER | CMD | RSV   | ATYP | DST.ADDR | DST.PORT |
-	// +----+-----+-------+------+----------+----------+
-	// | 1  | 1   | X'00' | 1    | Variable | 2        |
-	// +----+-----+-------+------+----------+----------+
-	// For UDP ASSOCIATE, DST.ADDR and DST.PORT are the address and port that the client
-	// wants to use to send UDP datagrams. We can set them to 0.
 	b := []byte{0x05, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 	if _, err := conn.Write(b); err != nil {
 		return fmt.Errorf("failed to write UDP associate request: %w", err)
 	}
 
 	// 2. Read the server's reply
-	// +----+-----+-------+------+----------+----------+
-	// |VER | REP | RSV   | ATYP | BND.ADDR | BND.PORT |
-	// +----+-----+-------+------+----------+----------+
-	// | 1  | 1   | X'00' | 1    | Variable | 2        |
-	// +----+-----+-------+------+----------+----------+
 	resp := make([]byte, 256)
 	n, err := conn.Read(resp)
 	if err != nil {
@@ -137,11 +125,6 @@ func (s *Socks5Forwarder) ForwardUDP(pkt []byte) error {
 	defer udpConn.Close()
 
 	// 4. Construct the SOCKS5 UDP request packet
-	// +----+------+------+----------+----------+----------+
-	// |RSV | FRAG | ATYP | DST.ADDR | DST.PORT |   DATA   |
-	// +----+------+------+----------+----------+----------+
-	// | 2  |  1   |  1   | Variable |    2     | Variable |
-	// +----+------+------+----------+----------+----------+
 	udpReq := []byte{0x00, 0x00, 0x00, 0x01} // RSV, FRAG, ATYP (IPv4)
 	udpReq = append(udpReq, dstIP.To4()...)
 	portBytes := make([]byte, 2)
@@ -211,29 +194,20 @@ func (h *HttpForwarder) ForwardTCP(pkt []byte) error {
 
 func (h *HttpForwarder) ForwardUDP(pkt []byte) error {
 	log.Println("UDP forwarding is not supported by HTTP proxies.")
-	return nil // Not a fatal error, just unsupported.
+	return nil
 }
 
-// WriteAddr writes the Shadowsocks address format (ATYP | ADDR | PORT)
+// WriteAddr writes the Shadowsocks address format
 func WriteAddr(conn net.Conn, ip net.IP, port uint16) error {
 	if ip.To4() != nil {
-		// IPv4
 		if _, err := conn.Write([]byte{0x01}); err != nil {
 			return err
 		}
 		if _, err := conn.Write(ip.To4()); err != nil {
 			return err
 		}
-	} else if ip.To16() != nil {
-		// IPv6
-		if _, err := conn.Write([]byte{0x04}); err != nil {
-			return err
-		}
-		if _, err := conn.Write(ip.To16()); err != nil {
-			return err
-		}
 	} else {
-		return fmt.Errorf("invalid IP address")
+		return fmt.Errorf("unsupported address type")
 	}
 	portBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(portBytes, port)
@@ -301,7 +275,6 @@ func (s *ShadowsocksForwarder) ForwardUDP(pkt []byte) error {
 	}
 	pc = s.Cipher.PacketConn(pc)
 
-	// Construct SS UDP request
 	tgt := &net.UDPAddr{IP: dstIP, Port: int(dstPort)}
 	payload := pkt[ihl+8:]
 	_, err = pc.WriteTo(payload, tgt)
@@ -312,34 +285,26 @@ func (s *ShadowsocksForwarder) ForwardUDP(pkt []byte) error {
 	return nil
 }
 
-// Update StartTUNWithConfig to support new proxy types
-func StartTUNWithConfig(cfg *config.AppConfig) error {
+func StartTUNWithConfig(cfg *config.AppConfig, stopChan <-chan struct{}) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	active := cfg.Servers[cfg.ActiveIndex]
 	var forwarder Forwarder
+	var err error
+
 	switch active.Type {
 	case "shadowsocks":
-		fwd, err := NewShadowsocksForwarder(active)
-		if err != nil {
-			return err
-		}
-		forwarder = fwd
+		forwarder, err = NewShadowsocksForwarder(active)
 	case "socks5":
-		fwd, err := NewSocks5Forwarder(active)
-		if err != nil {
-			return err
-		}
-		forwarder = fwd
-	case "http", "https":
-		fwd, err := NewHttpForwarder(active)
-		if err != nil {
-			return err
-		}
-		forwarder = fwd
+		forwarder, err = NewSocks5Forwarder(active)
+	// VLESS, VMess, and Trojan require a full V2Ray-core implementation, which is a very large project.
+	// This TUN implementation will forward standard protocols through Shadowsocks/SOCKS5.
 	default:
-		return fmt.Errorf("unsupported server type: %s", active.Type)
+		return fmt.Errorf("unsupported server type for TUN mode: %s", active.Type)
+	}
+	if err != nil {
+		return err
 	}
 
 	ifce, err := setupTUN()
@@ -349,54 +314,71 @@ func StartTUNWithConfig(cfg *config.AppConfig) error {
 	defer ifce.Close()
 	log.Printf("TUN interface created: %s", ifce.Name())
 
-	buf := make([]byte, 1500)
-	for {
-		n, err := ifce.Read(buf)
-		if err != nil {
-			log.Printf("TUN read error: %v", err)
-			break
-		}
-		packet := make([]byte, n)
-		copy(packet, buf[:n])
+	packetChan := make(chan []byte, 100)
+	for i := 0; i < 10; i++ {
+		go packetWorker(ifce, forwarder, packetChan)
+	}
 
-		AddBytesReceived(int64(n))
-		if n < 20 {
+	go func() {
+		buf := make([]byte, 1500)
+		for {
+			select {
+			case <-stopChan:
+				return
+			default:
+				n, err := ifce.Read(buf)
+				if err != nil {
+					return
+				}
+				packet := make([]byte, n)
+				copy(packet, buf[:n])
+				packetChan <- packet
+			}
+		}
+	}()
+
+	<-stopChan
+	log.Println("TUN mode stopped.")
+	return nil
+}
+
+
+func packetWorker(ifce TUNDevice, forwarder Forwarder, packetChan <-chan []byte) {
+	for packet := range packetChan {
+		AddBytesReceived(int64(len(packet)))
+		if len(packet) < 20 {
 			continue // Not a valid IP packet
 		}
 		proto := packet[9] // IPv4 protocol field
 		switch proto {
 		case 1: // ICMP
-			go handleICMP(ifce, packet)
+			handleICMP(ifce, packet)
 		case 6: // TCP
-			go forwarder.ForwardTCP(packet)
+			if err := forwarder.ForwardTCP(packet); err != nil {
+				log.Printf("TCP forwarding error: %v", err)
+			}
 		case 17: // UDP
-			go forwarder.ForwardUDP(packet)
+			if err := forwarder.ForwardUDP(packet); err != nil {
+				log.Printf("UDP forwarding error: %v", err)
+			}
 		}
 	}
-	return nil
 }
 
 func handleICMP(ifce TUNDevice, pkt []byte) {
-	if len(pkt) < 28 { // IP Header (20) + ICMP Header (8)
+	if len(pkt) < 28 {
 		return
 	}
-	// Check if it's an ICMP Echo Request (ping)
 	if pkt[20] == 8 && pkt[21] == 0 {
 		log.Println("TUN ICMP -> Echo Request received (Ping)")
-		// Construct Echo Reply
 		replyPkt := make([]byte, len(pkt))
 		copy(replyPkt, pkt)
 
-		// Swap Src/Dst IPs
-		copy(replyPkt[12:16], pkt[16:20]) // DstIP -> SrcIP
-		copy(replyPkt[16:20], pkt[12:16]) // SrcIP -> DstIP
-
-		// Set ICMP type to Echo Reply (0)
+		copy(replyPkt[12:16], pkt[16:20])
+		copy(replyPkt[16:20], pkt[12:16])
 		replyPkt[20] = 0
-
-		// Recalculate checksums
-		replyPkt[10] = 0 // Clear IP checksum
-		replyPkt[22] = 0 // Clear ICMP checksum
+		replyPkt[10] = 0
+		replyPkt[22] = 0
 		binary.BigEndian.PutUint16(replyPkt[22:], checksum(replyPkt[20:]))
 		binary.BigEndian.PutUint16(replyPkt[10:], checksum(replyPkt[:20]))
 
@@ -416,11 +398,9 @@ func checksum(data []byte) uint16 {
 	if len(data)%2 == 1 {
 		sum += uint32(data[len(data)-1])
 	}
-
 	for sum>>16 > 0 {
 		sum = (sum & 0xffff) + (sum >> 16)
 	}
-
 	return uint16(^sum)
 }
 
@@ -433,28 +413,27 @@ func setupTUN() (TUNDevice, error) {
 	}
 	switch runtime.GOOS {
 	case "linux":
-		cmd := exec.Command("sudo", "ip", "addr", "add", "10.0.85.2/24", "dev", ifce.Name())
-		_ = cmd.Run()
-		cmd = exec.Command("sudo", "ip", "link", "set", "dev", ifce.Name(), "up")
-		_ = cmd.Run()
-		cmd = exec.Command("sudo", "ip", "route", "add", "default", "dev", ifce.Name())
-		_ = cmd.Run()
+		if err := exec.Command("sudo", "ip", "addr", "add", "10.0.85.2/24", "dev", ifce.Name()).Run(); err != nil {
+			log.Printf("Error setting IP address: %v", err)
+		}
+		if err := exec.Command("sudo", "ip", "link", "set", "dev", ifce.Name(), "up").Run(); err != nil {
+			log.Printf("Error bringing up interface: %v", err)
+		}
+		if err := exec.Command("sudo", "ip", "route", "add", "default", "dev", ifce.Name()).Run(); err != nil {
+			log.Printf("Error setting default route: %v", err)
+		}
 	case "darwin":
-		cmd := exec.Command("sudo", "ifconfig", ifce.Name(), "10.0.85.2", "10.0.85.1", "up")
-		if err := cmd.Run(); err != nil {
+		if err := exec.Command("sudo", "ifconfig", ifce.Name(), "10.0.85.2", "10.0.85.1", "up").Run(); err != nil {
 			return nil, fmt.Errorf("failed to setup TUN interface on macOS: %w", err)
 		}
-		cmd = exec.Command("sudo", "route", "add", "default", "10.0.85.1")
-		if err := cmd.Run(); err != nil {
+		if err := exec.Command("sudo", "route", "add", "default", "10.0.85.1").Run(); err != nil {
 			return nil, fmt.Errorf("failed to set default route on macOS: %w", err)
 		}
 	case "windows":
-		cmd := exec.Command("netsh", "interface", "ip", "set", "address", fmt.Sprintf("name=\"%s\"", ifce.Name()), "static", "10.0.85.2", "255.255.255.0")
-		if err := cmd.Run(); err != nil {
+		if err := exec.Command("netsh", "interface", "ip", "set", "address", fmt.Sprintf("name=\"%s\"", ifce.Name()), "static", "10.0.85.2", "255.255.255.0").Run(); err != nil {
 			return nil, fmt.Errorf("failed to setup TUN interface on Windows: %w", err)
 		}
-		cmd = exec.Command("netsh", "interface", "ip", "set", "dns", fmt.Sprintf("name=\"%s\"", ifce.Name()), "static", "8.8.8.8")
-		if err := cmd.Run(); err != nil {
+		if err := exec.Command("netsh", "interface", "ip", "set", "dns", fmt.Sprintf("name=\"%s\"", ifce.Name()), "static", "8.8.8.8").Run(); err != nil {
 			log.Printf("Could not set DNS on Windows, this is not a fatal error: %v", err)
 		}
 	}

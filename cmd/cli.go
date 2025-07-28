@@ -26,8 +26,11 @@ func Execute() {
 func init() {
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(configCmd)
+
 	configCmd.AddCommand(getCmd)
 	configCmd.AddCommand(setActiveCmd)
+	configCmd.AddCommand(clearCmd)
+	configCmd.AddCommand(dedupeCmd)
 }
 
 var startCmd = &cobra.Command{
@@ -47,7 +50,7 @@ var startCmd = &cobra.Command{
 
 		fmt.Printf("Starting NekoGo in %s mode...\n", cfg.Mode)
 		if cfg.Mode == "tun" {
-			if err := core.StartTUNWithConfig(cfg); err != nil {
+			if err := core.StartTUNWithConfig(cfg, nil); err != nil {
 				fmt.Printf("Error starting TUN mode: %v\n", err)
 				os.Exit(1)
 			}
@@ -123,5 +126,55 @@ var setActiveCmd = &cobra.Command{
 			os.Exit(1)
 		}
 		fmt.Printf("Active server set to index %d.\n", newIndex)
+	},
+}
+
+var clearCmd = &cobra.Command{
+	Use:   "clear",
+	Short: "Remove all servers from the configuration",
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.LoadConfig("nekogo.yaml")
+		if err != nil {
+			fmt.Printf("Failed to load config: %v\n", err)
+			os.Exit(1)
+		}
+
+		cfg.Servers = []config.ServerConfig{}
+		cfg.ActiveIndex = 0
+
+		if err := config.SaveConfig("nekogo.yaml", cfg); err != nil {
+			fmt.Printf("Failed to save config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("All servers have been removed.")
+	},
+}
+
+var dedupeCmd = &cobra.Command{
+	Use:   "dedupe",
+	Short: "Remove duplicate servers from the configuration",
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg, err := config.LoadConfig("nekogo.yaml")
+		if err != nil {
+			fmt.Printf("Failed to load config: %v\n", err)
+			os.Exit(1)
+		}
+
+		seen := make(map[string]bool)
+		var result []config.ServerConfig
+		for _, server := range cfg.Servers {
+			identifier := fmt.Sprintf("%s:%d", server.Address, server.Port)
+			if _, ok := seen[identifier]; !ok {
+				seen[identifier] = true
+				result = append(result, server)
+			}
+		}
+		cfg.Servers = result
+
+		if err := config.SaveConfig("nekogo.yaml", cfg); err != nil {
+			fmt.Printf("Failed to save config: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Duplicate servers have been removed.")
 	},
 }

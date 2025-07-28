@@ -1,0 +1,230 @@
+active_index: 1
+mode: proxy
+proxy_addr: ""
+rules: []
+servers:
+    - name: GB_speednode_0133
+      type: shadowsocks
+      address: 91.193.58.193
+      port: 8880
+      uuid: ""
+      password: ""
+      method: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      security: ""
+      network: ""
+      host: ""
+      path: ""
+      alterid: 0
+      tls: false
+      latency: 54 ms
+    - name: GB_speednode_0134
+      type: vless
+      address: 91.193.58.104
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: us.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 52 ms
+    - name: GB_speednode_0135
+      type: vless
+      address: 91.193.58.13
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: /TelegramU0001F1E8U0001F1F3
+      alterid: 0
+      tls: false
+      latency: 53 ms
+    - name: GB_speednode_0136
+      type: vless
+      address: 91.193.58.162
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: /TelegramğŸ‡¨ğŸ‡³
+      alterid: 0
+      tls: false
+      latency: 53 ms
+    - name: GB_speednode_0137
+      type: vless
+      address: 91.193.58.107
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: "/Telegram\U0001F1E8\U0001F1F3 @MxlShare @WangCai2"
+      alterid: 0
+      tls: false
+      latency: 51 ms
+    - name: GB_speednode_0138
+      type: vless
+      address: 91.193.58.98
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: tw.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 52 ms
+    - name: GB_speednode_0139
+      type: vless
+      address: 91.193.58.100
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: /TelegramU0001F1E8U0001F1F3
+      alterid: 0
+      tls: false
+      latency: 52 ms
+    - name: GB_speednode_0140
+      type: vless
+      address: 91.193.58.21
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: kjgx.laoyoutiao.link
+      path: /Telegram@WangCai2
+      alterid: 0
+      tls: false
+      latency: 50 ms
+    - name: GB_speednode_0141
+      type: vless
+      address: 91.193.58.2
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: kjgx.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 50 ms
+    - name: GB_speednode_0142
+      type: vless
+      address: 91.193.58.134
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: us.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 52 ms
+    - name: GB_speednode_0143
+      type: vless
+      address: 25.26.27.29
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: hk.laoyoutiao.link
+      path: /TelegramU0001F1E8U0001F1F3
+      alterid: 0
+      tls: false
+      latency: 53 ms
+    - name: GB_speednode_0144
+      type: vless
+      address: 91.193.58.166
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: kjgx.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 53 ms
+    - name: GB_speednode_0145
+      type: vless
+      address: 91.193.58.172
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: us.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 51 ms
+    - name: GB_speednode_0146
+      type: vless
+      address: 91.193.58.69
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: cs.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 53 ms
+    - name: GB_speednode_0147
+      type: vless
+      address: 91.193.58.132
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: /
+      alterid: 0
+      tls: false
+      latency: 51 ms
+    - name: vless-91.193.58.151:8880
+      type: vless
+      address: 91.193.58.151
+      port: 8880
+      uuid: fab7bf9c-ddb9-4563-8a04-fb01ce6c0fbf
+      password: ""
+      method: ""
+      security: ""
+      network: ws
+      host: sk.laoyoutiao.link
+      path: /TelegramU0001F1E8U0001F
+      alterid: 0
+      tls: false
+      latency: 50 ms
+subscriptions: []
